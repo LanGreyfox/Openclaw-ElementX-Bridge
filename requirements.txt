@@ -11,7 +11,6 @@ av==17.0.0
 certifi==2026.2.25
 click==8.3.2
 ctranslate2==4.7.1
-faster-whisper==1.2.1
 filelock==3.28.0
 flatbuffers==25.12.19
 frozenlist==1.8.0

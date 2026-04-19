@@ -5,6 +5,7 @@ import time
 import aiohttp
 import os
 from nio import AsyncClient
+from whisper_transcriber import WhisperTranscriber
 
 # --- Configuration ---
 HOMESERVER = "https://matrix.org"
@@ -26,6 +27,7 @@ class TurboBridge:
         self.client.access_token = ACCESS_TOKEN
         self.sync_token = None
         self.start_time = time.time() * 1000
+        self.transcriber = WhisperTranscriber(model_size="base", device="cpu")
 
     async def download_image(self, session, mxc_url):
         """Downloads the image via the v1 path and cleans multipart data."""
@@ -156,11 +158,16 @@ class TurboBridge:
             print(f"🎵 Audio received from {sender}")
             mxc_url = content.get("url")
             media_path = await self.download_audio(session, mxc_url)
-            #if not body or body.startswith("mxc://"):
-            #    body = "Beschreibe dieses Audio."        
+            if media_path:
+                try:
+                    body = self.transcriber.transcribe_and_get_text(media_path)
+                    print(f"✅ Audio transcribed: {body[:50]}...")
+                except Exception as e:
+                    print(f"⚠️ Transcription failed: {e}")
+                    body = "Audio konnte nicht transkribiert werden."
 
-        # Send message to OpenClaw (if text or image present)
-        if msgtype in ["m.text", "m.image"]:
+        # Send message to OpenClaw (if text, image or audio present)
+        if msgtype in ["m.text", "m.image", "m.audio", "m.voice"]:
             print(f"🗨️ Processing: {body[:50]}...")
             answer = await self.send_to_openclaw(body, image_path)
             
@@ -173,6 +180,10 @@ class TurboBridge:
             # Delete media after processing
             if image_path and os.path.exists(image_path):
                 os.remove(image_path)
+
+            # Delete audio after processing
+            if media_path and os.path.exists(media_path):
+                os.remove(media_path)
 
     async def start(self):
         print("--- Matrix-OpenClaw Turbo-Bridge (V1-Media-Fix) started ---")
