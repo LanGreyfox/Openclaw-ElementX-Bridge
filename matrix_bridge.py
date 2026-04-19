@@ -125,7 +125,7 @@ class TurboBridge:
                 data = json.loads(match.group(0))
                 payloads = data.get("result", {}).get("payloads", [])
                 if payloads:
-                    # Sammle alle Texte aus allen Payloads
+                    # Collect all texts from payloads
                     all_texts = []
                     for payload in payloads:
                         text_content = payload.get("text", "").strip()
@@ -133,7 +133,7 @@ class TurboBridge:
                             all_texts.append(text_content)
 
                     if all_texts:
-                        # Verbinde alle Texte mit einem Trenner
+                        # collect all texts with separator
                         return "\n\n---\n\n".join(all_texts)
 
             return "Error: Could not process the AI's response."
