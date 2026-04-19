@@ -114,18 +114,28 @@ class TurboBridge:
         try:
             process = await asyncio.create_subprocess_exec(
                 "/home/skynet/.npm-global/bin/openclaw", "agent", "--to", "main", "--message", message_content, "--json",
-                stdout=asyncio.subprocess.PIPE, 
+                stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE
             )
             stdout, stderr = await process.communicate()
             output = stdout.decode().strip()
-            
+
             match = re.search(r'\{.*\}', output, re.DOTALL)
             if match:
                 data = json.loads(match.group(0))
                 payloads = data.get("result", {}).get("payloads", [])
                 if payloads:
-                    return payloads[0].get("text", "AI has not provided any text.")
+                    # Sammle alle Texte aus allen Payloads
+                    all_texts = []
+                    for payload in payloads:
+                        text_content = payload.get("text", "").strip()
+                        if text_content:
+                            all_texts.append(text_content)
+
+                    if all_texts:
+                        # Verbinde alle Texte mit einem Trenner
+                        return "\n\n---\n\n".join(all_texts)
+
             return "Error: Could not process the AI's response."
         except Exception as e:
             return f"Error calling OpenClaw: {e}"
@@ -142,6 +152,7 @@ class TurboBridge:
             return
 
         image_path = None
+        media_path = None
         body = content.get("body", "")
 
         # Image logic
