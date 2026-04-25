@@ -29,8 +29,8 @@ class TurboBridge:
         self.start_time = time.time() * 1000
         self.transcriber = WhisperTranscriber(model_size="base", device="cpu")
 
-    async def download_image(self, session, mxc_url):
-        """Downloads the image via the v1 path and cleans multipart data."""
+    async def _download_media(self, session, mxc_url, temp_dir, extension):
+        """Generalized function to download media (images/audio) via v1 path and handles multipart data."""
         try:
             mxc_parts = mxc_url.replace("mxc://", "").split("/")
             server_name, media_id = mxc_parts[0], mxc_parts[1]
@@ -45,65 +45,36 @@ class TurboBridge:
                 if resp.status == 200:
                     raw_data = await resp.read()
                     
-                    # Multipart handling: Extract actual image data
-                    # Images in multipart start after the header block (\r\n\r\n)
+                    # Multipart handling: Extract actual binary data
                     if b"\r\n\r\n" in raw_data:
                         print("📦 Multipart found, extracting binary data...")
                         parts = raw_data.split(b"\r\n\r\n")
-                        # We take the part after headers and trim footer
-                        image_data = parts[1].split(b"\r\n--")[0]
+                        media_data = parts[1].split(b"\r\n--")[0]
                     else:
-                        image_data = raw_data
+                        media_data = raw_data
 
-                    file_path = os.path.join(TEMP_DIR, f"img_{int(time.time())}.jpg")
+                    file_path = os.path.join(temp_dir, f"media_{int(time.time())}{extension}")
                     with open(file_path, "wb") as f:
-                        f.write(image_data)
+                        f.write(media_data)
                     
-                    print(f"✅ Image saved locally: {file_path}")
+                    print(f"✅ Media saved locally: {file_path}")
                     return file_path
                 else:
                     print(f"❌ Download failed: Status {resp.status}")
                     return None
         except Exception as e:
-            print(f"⚠️ Error during download: {e}")
+            print(f"⚠️ Error during media download: {e}")
             return None
+
+    async def download_image(self, session, mxc_url):
+        """Downloads the image via the v1 path and cleans multipart data."""
+        # Calls generalized helper function for consistency
+        return await self._download_media(session, mxc_url, TEMP_DIR, ".jpg")
 
     async def download_audio(self, session, mxc_url):
         """Downloads the audio file and saves it."""
-        try:
-            # Audio is also loaded via v1-Media
-            mxc_parts = mxc_url.replace("mxc://", "").split("/")
-            server_name, media_id = mxc_parts[0], mxc_parts[1]
-            
-            url = f"{MEDIA_BASE_URL}/_matrix/client/v1/media/download/{server_name}/{media_id}"
-            headers = {"Authorization": f"Bearer {ACCESS_TOKEN}"}
-            
-            print(f"🎵 Audio download from {url}")
-
-            async with session.get(url, headers=headers) as resp:
-                if resp.status == 200:
-                    raw_data = await resp.read()
-                    
-                    # Multipart-Handling für Audio
-                    if b"\r\n\r\n" in raw_data:
-                        print("📦 Multipart detected, extracting binary data...")
-                        parts = raw_data.split(b"\r\n\r\n")
-                        audio_data = parts[1].split(b"\r\n--")[0]
-                    else:
-                        audio_data = raw_data
-
-                    file_path = os.path.join(AUDIO_TEMP_DIR, f"audio_{int(time.time())}.ogg")
-                    with open(file_path, "wb") as f:
-                        f.write(audio_data)
-                    
-                    print(f"✅ Audio saved locally: {file_path}")
-                    return file_path
-                else:
-                    print(f"❌ Audio download failed: Status {resp.status}")
-                    return None
-        except Exception as e:
-            print(f"⚠️ Error during audio download: {e}")
-            return None
+        # Calls generalized helper function for consistency
+        return await self._download_media(session, mxc_url, AUDIO_TEMP_DIR, ".ogg")
 
     async def send_to_openclaw(self, text, image_path=None):
         """Invokes OpenClaw. If an image is present, the path is given."""
