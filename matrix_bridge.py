@@ -80,15 +80,24 @@ class TurboBridge:
         """Invokes OpenClaw. If an image is present, the path is given."""
         message_content = text
         if image_path:
-            message_content = f"I have a local image saved here: {image_path}. With the following text {text}"
+            message_content = f"Ich habe hier ein lokales Bild hinterlegt: {image_path}. Mit folgendem Text {text}"
 
         try:
+            start_time = time.time()
+            print(f"⏱️ Starting OpenClaw subprocess at {start_time:.2f}")
+            
             process = await asyncio.create_subprocess_exec(
                 "/home/skynet/.npm-global/bin/openclaw", "agent", "--to", "main", "--message", message_content, "--json",
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE
             )
+            subprocess_start_time = time.time()
+            print(f"⏱️ Subprocess created in {subprocess_start_time - start_time:.2f} seconds")
+            
             stdout, stderr = await process.communicate()
+            communicate_time = time.time()
+            print(f"⏱️ Subprocess communicate finished in {communicate_time - subprocess_start_time:.2f} seconds")
+            
             output = stdout.decode().strip()
 
             match = re.search(r'\{.*\}', output, re.DOTALL)
@@ -105,8 +114,12 @@ class TurboBridge:
 
                     if all_texts:
                         # collect all texts with separator
+                        end_time = time.time()
+                        print(f"⏱️ Total OpenClaw processing time: {end_time - start_time:.2f} seconds")
                         return "\n\n---\n\n".join(all_texts)
 
+            end_time = time.time()
+            print(f"⏱️ Total OpenClaw processing time: {end_time - start_time:.2f} seconds")
             return "Error: Could not process the AI's response."
         except Exception as e:
             return f"Error calling OpenClaw: {e}"
