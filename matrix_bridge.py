@@ -1,3 +1,15 @@
+# Matrix-OpenClaw Turbo-Bridge (V1-Media-Fix)
+#
+# This script connects an Element Matrix bot with the Openclaw AI Agent. 
+# It receives messages, images and audios from Matrix rooms, processes them via Openclaw API,
+# sends results back as text replies, and deletes temporary media files.
+#
+# Key functions:
+# - V1-media download with multipart handling (b"\r\n\r\n" -> b"--")
+# - Audio transcription via WhisperTranscriber (base model, CPU)
+# - OpenClaw call via subprocess and JSON parse
+# - Automatic media cleanup after processing
+
 import asyncio
 import json
 import re
