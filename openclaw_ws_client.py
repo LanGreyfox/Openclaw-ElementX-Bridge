@@ -103,6 +103,44 @@ class OpenClawClient:
                 continue
             # Unexpected frame - ignore and keep waiting for our response.
 
+    async def subscribe_session_messages(self, session_key: str) -> RpcResult:
+        return await self.request("sessions.messages.subscribe", {"sessionKey": session_key})
+
+    async def unsubscribe_session_messages(self, session_key: str) -> RpcResult:
+        return await self.request("sessions.messages.unsubscribe", {"sessionKey": session_key})
+
+    async def listen_for_events(self, timeout: float = 30.0) -> None:
+        if self.ws is None:
+            raise RuntimeError("Not connected")
+
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + timeout
+        print(f"Listening for events for up to {timeout:.0f} seconds...")
+
+        while True:
+            remaining = deadline - loop.time()
+            if remaining <= 0:
+                print("No more events received within timeout.")
+                return
+
+            try:
+                raw = await asyncio.wait_for(self.ws.recv(), timeout=remaining)
+            except asyncio.TimeoutError:
+                print("No more events received within timeout.")
+                return
+            except websockets.ConnectionClosed:
+                print("Connection closed while waiting for events.")
+                return
+
+            msg = json.loads(raw)
+            if msg.get("type") == "event":
+                print("EVENT:", json.dumps(msg, indent=2, ensure_ascii=False))
+                continue
+            if msg.get("type") == "res":
+                print("RESPONSE:", json.dumps(msg, indent=2, ensure_ascii=False))
+                continue
+            print("FRAME:", json.dumps(msg, indent=2, ensure_ascii=False))
+
     async def close(self) -> None:
         if self.ws is not None:
             await self.ws.close()
@@ -114,6 +152,8 @@ async def main() -> None:
     ap.add_argument("--token", required=True, help="Gateway auth token")
     ap.add_argument("--url", default=WS_URL)
     ap.add_argument("--chat", default=None, help="Optional chat text to send via chat.send")
+    ap.add_argument("--session", default=None, help="Optional sessionKey to use instead of the first available session")
+    ap.add_argument("--listen-timeout", type=float, default=20.0, help="Seconds to wait for incoming chat/session events after sending chat")
     args = ap.parse_args()
 
     client = OpenClawClient(args.url, args.token)
@@ -139,8 +179,21 @@ async def main() -> None:
                         first_session = items[0]
                         if isinstance(first_session, dict):
                             session_key = first_session.get("key") or first_session.get("sessionKey") or first_session.get("id")
+                session_key = args.session
+                if not session_key:
+                    session_res = await client.request("sessions.list")
+                    if session_res.ok and isinstance(session_res.payload, dict):
+                        items = session_res.payload.get("sessions") or session_res.payload.get("items") or session_res.payload.get("results") or []
+                        if items:
+                            first_session = items[0]
+                            if isinstance(first_session, dict):
+                                session_key = first_session.get("key") or first_session.get("sessionKey") or first_session.get("id")
                 if not session_key:
                     raise RuntimeError("Could not resolve a sessionKey from sessions.list; pass one manually or create a session first.")
+
+                subscribe_res = await client.subscribe_session_messages(session_key)
+                if not subscribe_res.ok:
+                    print(f"Warning: sessions.messages.subscribe failed: {json.dumps(subscribe_res.error, ensure_ascii=False)}")
 
                 result = await client.request("chat.send", {
                     "sessionKey": session_key,
@@ -149,6 +202,10 @@ async def main() -> None:
                 })
                 print("\n== chat.send ==")
                 print(json.dumps(result.payload if result.ok else result.error, indent=2, ensure_ascii=False))
+
+                await client.listen_for_events(timeout=args.listen_timeout)
+
+                await client.unsubscribe_session_messages(session_key)
 
             await client.close()
             return
