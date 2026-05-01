@@ -24,3 +24,6 @@ The process follows a sequential path: User Input $\rightarrow$ Internal Process
 5.  **AI Response JSON:** Openclaw returns the structured result, which the bridge parses.
 6.  **Send Response to Matrix Room (Output):** The clean, textual response is then posted back into the original Matrix room, completing the conversation loop.
 
+## Websocket Test Script
+
+python3 openclaw_ws_client.py --token API-KEY --chat "Sag kurz hallo"+
