@@ -121,9 +121,30 @@ See [requirements.txt](requirements.txt) for complete list.
 
 ## Known Issues & Workarounds
 
-1. **Multipart Media Handling**: Matrix v1 API wraps media in multipart format - already handled in `download_image()` and `download_audio()`
-2. **Audio Processing**: Currently downloads audio but doesn't auto-transcribe. The `handle_event()` has commented-out auto-transcription logic that could be enabled
-3. **Temp File Cleanup**: Only images are deleted after processing; audio files persist
+1. **Multipart Media Handling**: Matrix v1 API wraps media in multipart format - handled in `_download_media()`, `download_image()` and `download_audio()`
+2. **Openclaw JSON Parsing**: Uses regex-based extraction (`\{.*\}`) which can be fragile for complex responses
+
+## Best Practices & Tips
+
+### Audio Transcription
+- Enabled by default with `faster-whisper` base model (CPU)
+- Supports German/English auto-detection
+- Temp files cleaned up after processing
+
+### Configuration Checklist
+- Set `HOMESERVER`, `MEDIA_BASE_URL`, `BOT_ID`, `ACCESS_TOKEN` in `matrix_bridge.py`
+- Ensure Openclaw CLI is at: `/home/skynet/.npm-global/bin/openclaw`
+- Verify temp directories exist and are writable
+
+### Debugging
+- Check sync token handling in `start()` method
+- Monitor console logs for multipart extraction indicators
+- Verify media URLs have correct format (mxc:// URLs)
+
+### Performance Tips
+- Use `model_size="small"` or higher for better audio quality
+- Consider GPU (`device="cuda"`) if available
+- Monitor subprocess call timing in `send_to_openclaw()`
 
 ## Testing
 
