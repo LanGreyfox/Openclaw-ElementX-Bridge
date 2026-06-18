@@ -53,5 +53,5 @@ tqdm==4.67.3
 typer==0.24.1
 typing_extensions==4.15.0
 unpaddedbase64==2.1.0
-websockets==16.0.0
 yarl==1.23.0
+
