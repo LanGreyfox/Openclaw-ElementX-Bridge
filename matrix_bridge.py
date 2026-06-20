@@ -25,6 +25,8 @@ HOMESERVER = "https://matrix.org"
 MEDIA_BASE_URL = "https://matrix-client.matrix.org"
 BOT_ID = "@BOT_ID:matrix.org"
 ACCESS_TOKEN = "ENTER_MATRIX_TOKEN_HERE"
+OPENCLAW_LOG_COMMAND = 'openclaw logs --json | jq -c \'select(.type == "log" and .subsystem == null) | {timestamp: .time, message: .message}\''
+LOG_POLL_INTERVAL_SECONDS = 60
 
 # Directories for temporary images and audio
 TEMP_DIR = "/home/skynet/.openclaw/workspace/temp_images"
@@ -40,6 +42,8 @@ class TurboBridge:
         self.sync_token = None
         self.start_time = time.time() * 1000
         self.transcriber = WhisperTranscriber(model_size="base", device="cpu")
+        self.joined_rooms = set()
+        self.seen_logs = set()
 
     async def _download_media(self, session, mxc_url, temp_dir, extension):
         """Generalized function to download media (images/audio) via v1 path and handles multipart data."""
@@ -136,6 +140,96 @@ class TurboBridge:
         except Exception as e:
             return f"Error calling OpenClaw: {e}"
 
+    def update_joined_rooms(self, sync_data):
+        rooms = sync_data.get("rooms", {}).get("join", {})
+        self.joined_rooms = set(rooms.keys())
+        print(f"🔁 Joined rooms updated ({len(self.joined_rooms)}): {sorted(self.joined_rooms)}")
+
+    async def fetch_openclaw_log_entries(self):
+        print(f"🔍 Fetching OpenClaw logs with command: {OPENCLAW_LOG_COMMAND}")
+        try:
+            process = await asyncio.create_subprocess_shell(
+                OPENCLAW_LOG_COMMAND,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            stdout, stderr = await process.communicate()
+
+            if process.returncode != 0:
+                message = stderr.decode().strip()
+                print(f"⚠️ OpenClaw log command failed ({process.returncode}): {message}")
+                return []
+
+            output = stdout.decode().strip()
+            if not output:
+                print("ℹ️ OpenClaw logs returned no output.")
+                return []
+
+            lines = output.splitlines()
+            print(f"ℹ️ OpenClaw log fetch returned {len(lines)} line(s).")
+            entries = []
+            for line in lines:
+                print(f"📄 Parsing log line: {line}")
+                if not line.strip():
+                    continue
+                try:
+                    data = json.loads(line)
+                except json.JSONDecodeError as e:
+                    print(f"⚠️ Failed to parse OpenClaw log line: {line} ({e})")
+                    continue
+
+                timestamp = data.get("timestamp")
+                message = data.get("message")
+                if timestamp is None or message is None:
+                    continue
+
+                entries.append({"timestamp": timestamp, "message": message})
+
+            return entries
+        except Exception as e:
+            print(f"⚠️ Error fetching OpenClaw logs: {e}")
+            return []
+
+    async def broadcast_log_entries(self, entries):
+        if not self.joined_rooms:
+            print("ℹ️ No joined rooms available for log broadcast.")
+            return
+
+        body = "\n".join(f"[{entry['timestamp']}] {entry['message']}" for entry in entries)
+        for room_id in self.joined_rooms:
+            try:
+                await self.client.room_send(
+                    room_id,
+                    "m.room.message",
+                    {"msgtype": "m.text", "body": body}
+                )
+                print(f"✅ Sent OpenClaw log update to {room_id}")
+            except Exception as e:
+                print(f"⚠️ Failed to send log update to {room_id}: {e}")
+
+    async def openclaw_log_watcher(self):
+        print("🚧 OpenClaw log watcher started.")
+        while True:
+            print("⏱️ Polling OpenClaw logs...")
+            entries = await self.fetch_openclaw_log_entries()
+            new_entries = []
+            for entry in entries:
+                fingerprint = f"{entry['timestamp']}|{entry['message']}"
+                if fingerprint not in self.seen_logs:
+                    self.seen_logs.add(fingerprint)
+                    new_entries.append(entry)
+                else:
+                    print(f"🔁 Duplicate log skipped: {fingerprint}")
+
+            if new_entries:
+                print(f"✅ Found {len(new_entries)} new log entry(ies) to broadcast.")
+                await self.broadcast_log_entries(new_entries)
+            else:
+                print("ℹ️ No new OpenClaw log entries.")
+
+            print(f"💤 Sleeping for {LOG_POLL_INTERVAL_SECONDS} seconds before next log poll.")
+            await asyncio.sleep(LOG_POLL_INTERVAL_SECONDS)
+
     async def handle_event(self, session, room_id, event):
         """Processes text, images and audio."""
         content = event.get("content", {})
@@ -203,10 +297,14 @@ class TurboBridge:
             print("🔄 Priming...")
             initial_url = f"{HOMESERVER}/_matrix/client/r0/sync?timeout=0"
             async with session.get(initial_url, headers=headers) as resp:
+                print(f"🔁 Initial sync status: {resp.status}")
                 if resp.status == 200:
                     data = await resp.json()
                     self.sync_token = data.get("next_batch")
-                    print("🚀 Ready!")
+                    self.update_joined_rooms(data)
+                    print(f"🚀 Ready! Joined rooms: {len(self.joined_rooms)}")
+                    watcher_task = asyncio.create_task(self.openclaw_log_watcher())
+                    print("🚀 OpenClaw log watcher task started.")
                 else:
                     print(f"❌ Error during initial sync: {resp.status}")
                     return
@@ -221,6 +319,7 @@ class TurboBridge:
                         if response.status == 200:
                             data = await response.json()
                             self.sync_token = data.get("next_batch")
+                            self.update_joined_rooms(data)
                             rooms = data.get("rooms", {}).get("join", {})
                             for room_id, room_data in rooms.items():
                                 events = room_data.get("timeline", {}).get("events", [])
