@@ -315,7 +315,7 @@ class TurboBridge:
                     if self.sync_token:
                         url += f"&since={self.sync_token}"
                     
-                    async with session.get(url, headers=headers, timeout=45) as response:
+                    async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=45)) as response:
                         if response.status == 200:
                             data = await response.json()
                             self.sync_token = data.get("next_batch")
